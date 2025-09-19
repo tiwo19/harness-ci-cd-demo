@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harness-demo
+  labels:
+    app: harness-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: harness-demo
+  template:
+    metadata:
+      labels:
+        app: harness-demo
+    spec:
+      containers:
+      - name: harness-demo
+        image: 668918190726.dkr.ecr.us-east-1.amazonaws.com/harness-demo:<+artifact.tag>
+        ports:
+        - containerPort: 8080
