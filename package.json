@@ -1,0 +1,22 @@
+{
+  "name": "harness-ci-cd-demo",
+  "version": "1.0.0",
+  "description": "A simple Node.js Hello World app to demonstrate Harness CI/CD",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  },
+  "keywords": [
+    "nodejs",
+    "express",
+    "harness",
+    "cicd",
+    "demo"
+  ],
+  "author": "",
+  "license": "MIT"
+}
