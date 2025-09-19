@@ -1,0 +1,15 @@
+{
+  "name": "harness-ci-cd-demo",
+  "version": "1.0.0",
+  "description": "let's use a Node.js \"Hello World\" app To demonstrate how to use Harness",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}
