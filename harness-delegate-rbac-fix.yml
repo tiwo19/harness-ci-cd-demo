@@ -1,0 +1,28 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: harness-delegate
+  namespace: harness-delegate
+rules:
+  - apiGroups: ["*"]
+    resources: ["configmaps", "secrets", "deployments", "services", "pods", "jobs", "cronjobs", "namespaces"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: harness-delegate-binding
+  namespace: harness-delegate
+subjects:
+  - kind: ServiceAccount
+    name: harness-delegate
+    namespace: harness-delegate
+roleRef:
+  kind: ClusterRole
+  name: harness-delegate
+  apiGroup: rbac.authorization.k8s.io
