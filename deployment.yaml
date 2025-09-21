@@ -16,6 +16,6 @@ spec:
     spec:
       containers:
       - name: harness-demo
-        image: 668918190726.dkr.ecr.us-east-1.amazonaws.com/harness-demo:<+artifact.tag>
+        image: nginx:alpine
         ports:
         - containerPort: 8080

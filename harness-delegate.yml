@@ -1,21 +1,69 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: harness-delegate-ng
+  name: harness-delegate
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: harness-delegate
+  namespace: harness-delegate
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: harness-delegate-cluster-role
+rules:
+# Core API group
+- apiGroups: [""]
+  resources: ["*"]
+  verbs: ["*"]
+# Apps API group
+- apiGroups: ["apps"]
+  resources: ["*"]
+  verbs: ["*"]
+# Extensions API group
+- apiGroups: ["extensions"]
+  resources: ["*"]
+  verbs: ["*"]
+# Batch API group
+- apiGroups: ["batch"]
+  resources: ["*"]
+  verbs: ["*"]
+# RBAC API group
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["*"]
+  verbs: ["*"]
+# Networking API group
+- apiGroups: ["networking.k8s.io"]
+  resources: ["*"]
+  verbs: ["*"]
+# Storage API group
+- apiGroups: ["storage.k8s.io"]
+  resources: ["*"]
+  verbs: ["*"]
+# All other API groups
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
 
 ---
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: harness-delegate-ng-cluster-admin
+  name: harness-delegate-cluster-role-binding
 subjects:
-  - kind: ServiceAccount
-    name: default
-    namespace: harness-delegate-ng
+- kind: ServiceAccount
+  name: harness-delegate
+  namespace: harness-delegate
 roleRef:
   kind: ClusterRole
-  name: cluster-admin
+  name: harness-delegate-cluster-role
   apiGroup: rbac.authorization.k8s.io
 
 ---
@@ -24,15 +72,23 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: kubernetes-delegate-account-token
-  namespace: harness-delegate-ng
+  namespace: harness-delegate
 type: Opaque
 data:
-  DELEGATE_TOKEN: "NDc1NTg2ZWNlMzk3NmI3Yjk3NDIyMTU1NTcxY2MyMDc="
+  DELEGATE_TOKEN: "Nzg3Y2RmNmFkMGY1YmZjZGJjMTBmYzY2MjFlZTM4MzE="
 
 ---
 
-# If delegate needs to use a proxy, please follow instructions available in the documentation
-# https://developer.harness.io/docs/platform/delegates/manage-delegates/configure-delegate-proxy-settings/
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: release-b88c50
+  namespace: harness-delegate
+data:
+  config: |
+    release.name=release-b88c50
+
+---
 
 apiVersion: apps/v1
 kind: Deployment
@@ -40,10 +96,9 @@ metadata:
   labels:
     harness.io/name: kubernetes-delegate
   name: kubernetes-delegate
-  namespace: harness-delegate-ng
+  namespace: harness-delegate
 spec:
   replicas: 1
-  minReadySeconds: 120
   selector:
     matchLabels:
       harness.io/name: kubernetes-delegate
@@ -56,17 +111,18 @@ spec:
         prometheus.io/port: "3460"
         prometheus.io/path: "/api/metrics"
     spec:
-      terminationGracePeriodSeconds: 3600
+      terminationGracePeriodSeconds: 600
       restartPolicy: Always
+      serviceAccountName: harness-delegate
       containers:
-      - image: us-docker.pkg.dev/gar-prod-setup/harness-public/harness/delegate:25.08.86600
+      - image: harness/delegate:23.10.81010
         imagePullPolicy: Always
         name: delegate
         securityContext:
           allowPrivilegeEscalation: false
           runAsUser: 0
         ports:
-          - containerPort: 8080
+        - containerPort: 8080
         resources:
           limits:
             memory: "2048Mi"
@@ -110,7 +166,33 @@ spec:
             fieldRef:
               fieldPath: metadata.namespace
         - name: INIT_SCRIPT
-          value: ""
+          value: |
+            #!/bin/bash
+            set -e
+            
+            echo "Starting AWS tools installation..."
+            
+            # Update and install required packages
+            microdnf update -y && microdnf install -y curl unzip || true
+            
+            # Install aws-iam-authenticator
+            echo "Installing aws-iam-authenticator..."
+            curl -L -o /usr/local/bin/aws-iam-authenticator https://amazon-eks.s3.us-west-2.amazonaws.com/1.21.2/2021-07-05/bin/linux/amd64/aws-iam-authenticator
+            chmod +x /usr/local/bin/aws-iam-authenticator
+            
+            # Install AWS CLI v2
+            echo "Installing AWS CLI v2..."
+            cd /tmp
+            curl -L "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip -q awscliv2.zip
+            ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli
+            
+            # Verify installations
+            echo "Verifying installations..."
+            aws-iam-authenticator version || echo "aws-iam-authenticator installation failed"
+            aws --version || echo "aws cli installation failed"
+            
+            echo "AWS tools installation completed!"
         - name: DELEGATE_DESCRIPTION
           value: ""
         - name: DELEGATE_TAGS
@@ -126,132 +208,15 @@ spec:
 
 ---
 
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
+apiVersion: v1
+kind: Service
 metadata:
-   name: kubernetes-delegate-hpa
-   namespace: harness-delegate-ng
-   labels:
-       harness.io/name: kubernetes-delegate
+  name: delegate-service
+  namespace: harness-delegate
 spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: kubernetes-delegate
-  minReplicas: 1
-  maxReplicas: 1
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 70
-
----
-
-kind: Role
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: upgrader-cronjob
-  namespace: harness-delegate-ng
-rules:
-  - apiGroups: ["batch", "apps", "extensions"]
-    resources: ["cronjobs"]
-    verbs: ["get", "list", "watch", "update", "patch"]
-  - apiGroups: ["extensions", "apps"]
-    resources: ["deployments"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
-
----
-
-kind: RoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: kubernetes-delegate-upgrader-cronjob
-  namespace: harness-delegate-ng
-subjects:
-  - kind: ServiceAccount
-    name: upgrader-cronjob-sa
-    namespace: harness-delegate-ng
-roleRef:
-  kind: Role
-  name: upgrader-cronjob
-  apiGroup: ""
-
----
-
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: upgrader-cronjob-sa
-  namespace: harness-delegate-ng
-
----
-
-apiVersion: v1
-kind: Secret
-metadata:
-  name: kubernetes-delegate-upgrader-token
-  namespace: harness-delegate-ng
-type: Opaque
-data:
-  UPGRADER_TOKEN: "NDc1NTg2ZWNlMzk3NmI3Yjk3NDIyMTU1NTcxY2MyMDc="
-
----
-
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: kubernetes-delegate-upgrader-config
-  namespace: harness-delegate-ng
-data:
-  config.yaml: |
-    mode: Delegate
-    dryRun: false
-    workloadName: kubernetes-delegate
-    namespace: harness-delegate-ng
-    containerName: delegate
-    delegateConfig:
-      accountId: wGd7ZATCReysstwqqiWNZw
-      managerHost: https://app.harness.io
-
----
-
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  labels:
-    harness.io/name: kubernetes-delegate-upgrader-job
-  name: kubernetes-delegate-upgrader-job
-  namespace: harness-delegate-ng
-spec:
-  schedule: "0 */1 * * *"
-  concurrencyPolicy: Forbid
-  startingDeadlineSeconds: 20
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          serviceAccountName: upgrader-cronjob-sa
-          restartPolicy: Never
-          containers:
-          - image: harness/upgrader:latest
-            name: upgrader
-            imagePullPolicy: Always
-            envFrom:
-            - secretRef:
-                name: kubernetes-delegate-upgrader-token
-            volumeMounts:
-              - name: config-volume
-                mountPath: /etc/config
-          volumes:
-            - name: config-volume
-              configMap:
-                name: kubernetes-delegate-upgrader-config
+  type: ClusterIP
+  selector:
+    harness.io/name: kubernetes-delegate
+  ports:
+  - port: 8080
+    targetPort: 8080
